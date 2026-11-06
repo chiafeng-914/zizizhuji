@@ -1,4 +1,4 @@
-/* 字字珠璣｜第一階段：核心練習（尚未連線資料庫） */
+/* 字字珠璣｜第二階段：登入、錯題本、五盒複習（訪客模式不連資料庫） */
 (function () {
   "use strict";
 
@@ -11,7 +11,8 @@
     level: "全部",   // 全部｜國中｜高中
     type: "全部",    // 全部｜read｜typo｜form｜poly
     round: [], i: 0, results: [],
-    answered: false, typoStep: 1, picked: -1, order: []
+    answered: false, typoStep: 1, picked: -1, order: [],
+    user: null, boxes: {}, reviewIds: new Set(), screen: ""
   };
 
   // ---------- 小工具 ----------
@@ -36,12 +37,55 @@
     ["不積跬步，無以至千里", "荀子〈勸學〉"]
   ];
 
-  // ---------- 首頁 ----------
-  function renderHome() {
-    const n = pool().length;
+  // ---------- 帳號、錯題本與五盒複習 ----------
+  const SKEY = "zz-session";
+  const session = {
+    get() { try { return JSON.parse(localStorage.getItem(SKEY) || "null"); } catch (e) { return null; } },
+    set(v) { try { v ? localStorage.setItem(SKEY, JSON.stringify(v)) : localStorage.removeItem(SKEY); } catch (e) {} }
+  };
+  let DBM = null;
+  const db = async () => DBM || (DBM = await import("./db.js"));
+  const INTERVAL = [1, 3, 7, 14];                 // 第 1～4 盒：隔天、3 天、7 天、14 天後再考
+  const BOX_NAME = ["", "第一盒・隔天複習", "第二盒・三天後", "第三盒・七天後", "第四盒・十四天後"];
+  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const today = () => ymd(new Date());
+  const addDays = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return ymd(d); };
+  const byId = Object.fromEntries(window.QUESTIONS.map((q) => [q.id, q]));
+  const active = () => Object.entries(state.boxes).filter(([id, b]) => b.box < 5 && byId[id]);
+  const dueList = () => active().filter(([, b]) => b.due <= today()).map(([id]) => byId[id]);
+  const shortDate = (s) => s ? `${Number(s.slice(5, 7))}/${Number(s.slice(8))}` : "";
+
+  async function syncProgress() {
+    try {
+      const m = await db();
+      state.boxes = await m.loadProgress(state.user.sid);
+      if (state.screen === "home") renderHome();
+    } catch (e) { /* 離線時先用手機裡的紀錄 */ }
+  }
+
+  function record(q, ok) {
+    if (!state.user) return "";
+    const b = state.boxes[q.id];
+    let status = "";
+    if (!ok) { state.boxes[q.id] = { box: 1, due: addDays(INTERVAL[0]) }; status = "in"; }
+    else if (b && b.box < 5 && state.reviewIds.has(q.id)) {
+      const nb = b.box + 1;
+      state.boxes[q.id] = nb >= 5 ? { box: 5, due: "" } : { box: nb, due: addDays(INTERVAL[nb - 1]) };
+      status = nb >= 5 ? "grad" : "up";
+    }
+    const u = state.user;
+    db().then((m) => {
+      if (status) m.saveProgress(u.sid, state.boxes).catch(() => {});
+      m.logAnswer({ code: u.code, sid: u.sid, qid: q.id, ok }).catch(() => {});
+    }).catch(() => {});
+    return status;
+  }
+
+  // ---------- 登入 ----------
+  function hero() {
     const d = new Date();
     const v = VERSES[(d.getFullYear() * 400 + d.getMonth() * 31 + d.getDate()) % VERSES.length];
-    app.innerHTML = `
+    return `
       <header class="hero">
         <div class="hero-side">
           <p class="date"><b>${cnNum(d.getDate())}</b>民國${[...String(d.getFullYear() - 1911)].map((x) => CN[x]).join("")}年・${cnNum(d.getMonth() + 1)}月</p>
@@ -51,7 +95,132 @@
           <span class="sub">一字一珠・日拾十顆</span>
           <div style="display:flex;flex-direction:column;align-items:center;gap:14px"><h1>字字珠璣</h1><span class="seal" aria-hidden="true">練字</span></div>
         </div>
-      </header>
+      </header>`;
+  }
+
+  function busy(form, text) { const b = form.querySelector("button[type=submit]"); b.disabled = true; b.lastChild.textContent = text; }
+
+  function renderLogin(msg, code, seat) {
+    state.screen = "login";
+    app.innerHTML = `${hero()}
+      <form class="section form" id="f">
+        <h2>登入</h2>
+        <label>班級代碼<input name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="6" required placeholder="老師給的六碼" value="${esc(code || "")}"></label>
+        <label>座號<input name="seat" type="number" inputmode="numeric" min="1" max="99" required value="${esc(seat || "")}"></label>
+        <p class="err" role="alert">${msg ? esc(msg) : ""}</p>
+        <button class="primary" type="submit"><span class="dot"></span>下一步</button>
+      </form>
+      <button class="ghost" id="guest">先不登入，訪客練習</button>
+      <p class="hint">訪客練習不會保存紀錄，也沒有錯題本</p>`;
+    document.getElementById("guest").addEventListener("click", () => { state.user = null; renderHome(); });
+    document.getElementById("f").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const f = e.target, c = f.code.value.trim().toUpperCase(), st = Number(f.seat.value);
+      busy(f, "查詢中…");
+      try {
+        const m = await db();
+        const cls = await m.getClass(c);
+        if (!cls) return renderLogin("找不到這個班級代碼，請再確認一次。", c, st);
+        if (st < cls.seatMin || st > cls.seatMax) return renderLogin(`這個班的座號是 ${cls.seatMin}～${cls.seatMax} 號。`, c, st);
+        const sid = m.sidOf(c, st), stu = await m.getStudent(sid);
+        stu ? renderPin(cls, st, stu) : renderRegister(cls, st);
+      } catch (err) { renderLogin("連不上資料庫，請檢查網路，或先用訪客練習。", c, st); }
+    });
+  }
+
+  function who(cls, seat) { return `<p class="who">${esc(cls.name)}・${seat} 號</p>`; }
+  const pinInput = (name, label) => `<label>${label}<input name="${name}" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" required></label>`;
+
+  function finishLogin(cls, seat, nickname, m) {
+    state.user = { code: cls.code, seat, sid: m.sidOf(cls.code, seat), nickname, className: cls.name };
+    session.set(state.user);
+    state.boxes = {};
+    renderHome();
+    syncProgress();
+  }
+
+  function renderPin(cls, seat, stu, msg) {
+    state.screen = "login";
+    app.innerHTML = `${hero()}
+      <form class="section form" id="f">
+        ${who(cls, seat)}<h2>${esc(stu.nickname)}，歡迎回來</h2>
+        ${pinInput("pin", "請輸入你的 4 位數密碼")}
+        <p class="err" role="alert">${msg ? esc(msg) : ""}</p>
+        <button class="primary" type="submit"><span class="dot"></span>登入</button>
+      </form>
+      <button class="ghost" id="back">不是我，重新輸入</button>`;
+    document.getElementById("back").addEventListener("click", () => renderLogin("", cls.code));
+    document.getElementById("f").addEventListener("submit", async (e) => {
+      e.preventDefault(); const f = e.target; busy(f, "確認中…");
+      try {
+        const m = await db();
+        if (await m.login({ code: cls.code, seat, pin: f.pin.value })) finishLogin(cls, seat, stu.nickname, m);
+        else renderPin(cls, seat, stu, "密碼不對。忘記密碼的話，請找老師重設。");
+      } catch (err) { renderPin(cls, seat, stu, "連不上資料庫，請檢查網路後再試。"); }
+    });
+  }
+
+  function renderRegister(cls, seat, msg) {
+    state.screen = "login";
+    app.innerHTML = `${hero()}
+      <form class="section form" id="f">
+        ${who(cls, seat)}<h2>第一次登入</h2>
+        <label>暱稱（老師看得到）<input name="nick" maxlength="12" required autocomplete="off"></label>
+        ${pinInput("pin", "自訂 4 位數密碼")}
+        ${pinInput("pin2", "再輸入一次密碼")}
+        <p class="err" role="alert">${msg ? esc(msg) : ""}</p>
+        <button class="primary" type="submit"><span class="dot"></span>完成</button>
+      </form>
+      <button class="ghost" id="back">座號打錯了，重新輸入</button>
+      <p class="hint">密碼請記好；換手機登入時會用到</p>`;
+    document.getElementById("back").addEventListener("click", () => renderLogin("", cls.code));
+    document.getElementById("f").addEventListener("submit", async (e) => {
+      e.preventDefault(); const f = e.target;
+      const nick = f.nick.value.trim(), pin = f.pin.value;
+      if (!/^\d{4}$/.test(pin)) return renderRegister(cls, seat, "密碼要是 4 個數字。");
+      if (pin !== f.pin2.value) return renderRegister(cls, seat, "兩次輸入的密碼不一樣。");
+      busy(f, "建立中…");
+      try { const m = await db(); await m.register({ code: cls.code, seat, nickname: nick, pin }); finishLogin(cls, seat, nick, m); }
+      catch (err) { renderRegister(cls, seat, "建立失敗：可能這個座號剛被別人用了，請找老師確認。"); }
+    });
+  }
+
+  // ---------- 錯題本 ----------
+  function renderBook() {
+    state.screen = "book";
+    const list = active();
+    const grad = Object.values(state.boxes).filter((b) => b.box >= 5).length;
+    const due = dueList().length;
+    const groups = [1, 2, 3, 4].map((n) => {
+      const items = list.filter(([, b]) => b.box === n).sort((a, b) => a[1].due.localeCompare(b[1].due));
+      if (!items.length) return "";
+      return `<section class="section"><h2>${BOX_NAME[n]}</h2><ul class="review">${items.map(([id, b]) =>
+        `<li><div class="q">${answerHTML(byId[id])}</div><div class="a">${b.due <= today() ? "今天要複習" : `下次複習：${shortDate(b.due)}`}</div></li>`).join("")}</ul></section>`;
+    }).join("");
+    app.innerHTML = `
+      <div class="top"><button class="back" id="home">← 首頁</button></div>
+      <h1 class="page-title">錯題本</h1>
+      <p class="msg">答錯的字會從第一盒開始，答對一次往後移一盒，連對四次就畢業。</p>
+      ${groups || `<p class="msg" style="margin-top:32px">目前沒有錯題，繼續保持。</p>`}
+      ${grad ? `<p class="hint">已經畢業 ${grad} 個字</p>` : ""}
+      ${due ? `<button class="primary" id="rev"><span class="dot"></span>開始複習（${Math.min(due, ROUND)} 題）</button>` : ""}`;
+    document.getElementById("home").addEventListener("click", renderHome);
+    const r = document.getElementById("rev");
+    if (r) r.addEventListener("click", () => startRound(true));
+    window.scrollTo({ top: 0 });
+  }
+
+  // ---------- 首頁 ----------
+  function renderHome() {
+    state.screen = "home";
+    const n = pool().length;
+    const u = state.user, due = u ? dueList().length : 0, words = u ? active().length : 0;
+    app.innerHTML = `
+      <div class="userbar">${u ? `<span>${esc(u.className)}・${u.seat} 號・${esc(u.nickname)}</span><button id="logout">登出</button>`
+        : `<span>訪客練習</span><button id="login">登入</button>`}</div>
+      ${hero()}
+      ${u ? `<button class="book" id="book"><span><b>錯題本</b><small>${words ? `收著 ${words} 個字` : "目前沒有錯題"}</small></span>
+        <span class="due">${due ? `今日待複習 <b>${due}</b> 題` : "今日已複習完"}</span></button>` : ""}
       <section class="section">
         <h2>程度</h2>
         <div class="tabs">${["全部", "國中", "高中", "古文十五篇"].map((x) => chip("level", x, x, state.level)).join("")}</div>
@@ -60,22 +229,37 @@
         <h2>題型</h2>
         <div class="tabs">${chip("type", "全部", "四種都練", state.type)}${Object.keys(TYPE_NAME).map((k) => chip("type", k, TYPE_NAME[k], state.type)).join("")}</div>
       </section>
-      <button class="primary" id="start" ${n ? "" : "disabled"}><span class="dot"></span>開始練習</button>
-      <p class="hint">共 ${n} 題・每回合隨機抽 ${Math.min(ROUND, n)} 題・試用版</p>`;
+      <button class="primary" id="start" ${n || due ? "" : "disabled"}><span class="dot"></span>開始練習</button>
+      <p class="hint">${u ? `每回合 ${ROUND} 題，會先放入到期的錯題（最多 5 題）` : `共 ${n} 題・每回合隨機抽 ${Math.min(ROUND, n)} 題・訪客不保存紀錄`}</p>`;
     app.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => {
       state[b.dataset.group] = b.dataset.value; renderHome();
     }));
-    document.getElementById("start").addEventListener("click", startRound);
+    document.getElementById("start").addEventListener("click", () => startRound(false));
+    if (u) {
+      document.getElementById("book").addEventListener("click", renderBook);
+      document.getElementById("logout").addEventListener("click", () => {
+        if (!window.confirm("確定要登出嗎？")) return;
+        state.user = null; state.boxes = {}; session.set(null); renderLogin();
+      });
+    } else document.getElementById("login").addEventListener("click", () => renderLogin());
   }
 
-  function startRound() {
-    state.round = shuffle(pool()).slice(0, ROUND);
+  // reviewOnly：從錯題本按「開始複習」，只考到期的錯題
+  function startRound(reviewOnly) {
+    const due = state.user ? shuffle(dueList()) : [];
+    const pick = reviewOnly ? due.slice(0, ROUND) : due.slice(0, 5);
+    const boxed = new Set(active().map(([id]) => id));
+    const fresh = reviewOnly ? [] : shuffle(pool().filter((q) => !boxed.has(q.id)));
+    state.reviewIds = new Set(pick.map((q) => q.id));
+    state.round = shuffle(pick.concat(fresh.slice(0, ROUND - pick.length)));
+    if (!state.round.length) return;
     state.i = 0; state.results = [];
     renderQuestion();
   }
 
   // ---------- 作答 ----------
   function renderQuestion() {
+    state.screen = "quiz";
     const q = state.round[state.i];
     state.answered = false; state.typoStep = 1; state.picked = -1;
     state.order = q.options ? shuffle(q.options) : [];
@@ -87,7 +271,7 @@
         <span class="count">${state.i + 1} / ${state.round.length}</span>
       </div>
       <article class="card">
-        <span class="tag">${q.src ? `〈${esc(q.src)}〉` : `${TYPE_NAME[q.type]}・${q.level}`}</span>
+        <span class="tag">${state.reviewIds.has(q.id) ? "複習・" : ""}${q.src ? `〈${esc(q.src)}〉` : `${TYPE_NAME[q.type]}・${q.level}`}</span>
         <div id="qbody">${body(q)}</div>
       </article>
       <div id="fb"></div>`;
@@ -189,7 +373,7 @@
     state.answered = true;
     const al = document.getElementById("allright"); if (al) al.disabled = true;
     app.querySelectorAll(".ch[data-i]").forEach((b) => (b.disabled = true));
-    state.results.push({ q, ok, given });
+    state.results.push({ q, ok, given, status: record(q, ok) });
     const half = !ok && foundPosition;
     const title = ok ? "答對了" : half ? "找到錯字了，但改法不對" : "再想想";
     const last = state.i === state.round.length - 1;
@@ -210,6 +394,8 @@
 
   // ---------- 結算 ----------
   function renderSummary() {
+    state.screen = "summary";
+    const grad = state.results.filter((r) => r.status === "grad").length;
     const total = state.results.length;
     const right = state.results.filter((r) => r.ok).length;
     const wrong = state.results.filter((r) => !r.ok);
@@ -217,15 +403,18 @@
     app.innerHTML = `
       <div class="score"><div class="num">${right}<small> / ${total}</small></div><span class="seal" aria-hidden="true">${right === total ? "滿分" : "已閱"}</span></div>
       <p class="msg">${msg}</p>
+      ${state.user && wrong.length ? `<p class="hint">答錯的 ${wrong.length} 個字已收進錯題本，明天會回來考你。</p>` : ""}
+      ${grad ? `<p class="hint">有 ${grad} 個字從錯題本畢業了！</p>` : ""}
       ${wrong.length ? `<section class="section"><h2>這回合答錯的字</h2><ul class="review">
         ${wrong.map((r) => `<li><div class="q">${answerHTML(r.q)}</div><div class="a">${esc(r.q.note)}</div></li>`).join("")}
       </ul></section>` : ""}
       <button class="primary" id="again">再練一回合</button>
       <button class="ghost" id="home">回首頁</button>`;
-    document.getElementById("again").addEventListener("click", startRound);
+    document.getElementById("again").addEventListener("click", () => startRound(false));
     document.getElementById("home").addEventListener("click", renderHome);
     window.scrollTo({ top: 0 });
   }
 
-  renderHome();
+  state.user = session.get();
+  if (state.user) { renderHome(); syncProgress(); } else renderLogin();
 })();

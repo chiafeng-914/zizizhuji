@@ -1,0 +1,79 @@
+rules_version = '2';
+// 字字珠璣｜Firestore 安全規則
+// 學生只能讀寫自己的紀錄；老師（指定信箱）可以建立班級、查看全班、重設學生密碼。
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isTeacher() {
+      return signedIn() && request.auth.token.email == 'chiafeng@dssh.tyc.edu.tw';
+    }
+    // 這台裝置已用正確密碼登入這位學生
+    function isMember(sid) {
+      return signedIn() && exists(/databases/$(database)/documents/students/$(sid)/devices/$(request.auth.uid));
+    }
+
+    // 班級：學生只能用代碼查一個班；老師可建立、列出、修改
+    match /classes/{code} {
+      allow get: if signedIn();
+      allow list, create, update, delete: if isTeacher();
+    }
+
+    // 學生基本資料（座號、暱稱），文件編號 = 班級代碼_座號
+    match /students/{sid} {
+      allow get: if signedIn();
+      allow list, delete: if isTeacher();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['code', 'seat', 'nickname', 'createdAt'])
+        && request.resource.data.seat is int
+        && request.resource.data.nickname is string
+        && request.resource.data.nickname.size() > 0 && request.resource.data.nickname.size() <= 12
+        && sid == request.resource.data.code + '_' + string(request.resource.data.seat)
+        && exists(/databases/$(database)/documents/classes/$(request.resource.data.code))
+        && request.resource.data.seat >= get(/databases/$(database)/documents/classes/$(request.resource.data.code)).data.seatMin
+        && request.resource.data.seat <= get(/databases/$(database)/documents/classes/$(request.resource.data.code)).data.seatMax
+        && existsAfter(/databases/$(database)/documents/secrets/$(sid));
+      allow update: if isMember(sid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname']);
+
+      // 登入過的裝置：要寫入正確的密碼雜湊才會被接受
+      match /devices/{uid} {
+        allow get: if (signedIn() && request.auth.uid == uid) || isTeacher();
+        allow list: if isTeacher();
+        allow create, update: if signedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['pin', 'at'])
+          && request.resource.data.pin == getAfter(/databases/$(database)/documents/secrets/$(sid)).data.pin;
+        allow delete: if isTeacher() || (signedIn() && request.auth.uid == uid);
+      }
+    }
+
+    // 密碼雜湊：任何人都讀不到；只能在第一次註冊時建立，之後只有老師能重設
+    match /secrets/{sid} {
+      allow read: if false;
+      allow create: if signedIn()
+        && !exists(/databases/$(database)/documents/students/$(sid))
+        && request.resource.data.keys().hasOnly(['pin'])
+        && request.resource.data.pin is string && request.resource.data.pin.size() == 64;
+      allow update: if isTeacher()
+        && request.resource.data.keys().hasOnly(['pin'])
+        && request.resource.data.pin is string && request.resource.data.pin.size() == 64;
+      allow delete: if isTeacher();
+    }
+
+    // 錯題本與複習進度
+    match /progress/{sid} {
+      allow read: if isMember(sid) || isTeacher();
+      allow write: if isMember(sid)
+        && request.resource.data.keys().hasOnly(['boxes', 'updatedAt']);
+    }
+
+    // 每一次作答紀錄（給老師統計）
+    match /answers/{id} {
+      allow create: if isMember(request.resource.data.sid)
+        && request.resource.data.keys().hasOnly(['code', 'sid', 'qid', 'ok', 'uid', 'at'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.ok is bool;
+      allow read: if isTeacher();
+    }
+  }
+}
