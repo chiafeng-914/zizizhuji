@@ -273,7 +273,7 @@
         <span class="count">${state.i + 1} / ${state.round.length}</span>
       </div>
       <article class="card">
-        <span class="tag">${state.reviewIds.has(q.id) ? "複習・" : ""}${q.src ? `〈${esc(q.src)}〉` : q.type === "idiom" ? `成語・${KIND[q.kind]}` : `${TYPE_NAME[q.type]}・${q.level}`}</span>
+        <span class="tag">${state.reviewIds.has(q.id) ? "複習・" : ""}${q.src ? `〈${esc(q.src)}〉` : q.type === "idiom" ? `成語・${KIND[q.kind]}` : q.fromIdiom ? `${TYPE_NAME[q.type]}・成語` : `${TYPE_NAME[q.type]}・${q.level}`}</span>
         <div id="qbody">${body(q)}</div>
       </article>
       <div id="fb"></div>`;

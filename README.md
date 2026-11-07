@@ -19,6 +19,7 @@
 | `questions.js` | 題庫第一批 100 題（已審核） |
 | `questions-classics.js` | 古文十五篇 63 題（已審核） |
 | `questions-idioms.js` | 成語應用 50 題，國高中通用（已審核） |
+| `questions-idiom-typos.js` | 成語錯別字 22 題：沿用成語題的成語與例句，自動產生錯別字題（待審核） |
 | `firebase-config.js` | Firebase 設定 |
 | `docs/開發規格書.md` | 完整開發規格 |
 | `docs/討論與決策紀錄.md` | 每次討論決定的事項與進度 |
