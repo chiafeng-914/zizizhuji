@@ -4,7 +4,7 @@
 
   const ROUND = 10;
   const TYPE_NAME = { read: "選出正確讀音", typo: "找出錯別字", form: "同音形近字", poly: "多音字判讀", idiom: "成語應用" };
-  const KIND = { ctx: "情境選用", usage: "用法正誤", meaning: "成語釋義", trap: "望文生義" };
+  const KIND = { ctx: "情境選用", usage: "用法正誤", meaning: "成語釋義", trap: "望文生義", rev: "看意思選成語" };
   const PUNCT = /[，。、；：？！「」『』（）《》—…\s]/;
   const app = document.getElementById("app");
 
@@ -246,12 +246,26 @@
     } else document.getElementById("login").addEventListener("click", () => renderLogin());
   }
 
+  // 各類題目輪流抽，避免題數很多的《成語精選》把其他題型擠掉
+  const bucketOf = (q) => q.type + (q.set ? "/精選" : "") + (q.classic ? "/古文" : "") + (q.fromIdiom ? "/成語" : "");
+  function balanced(list, n) {
+    const groups = {};
+    for (const q of list) (groups[bucketOf(q)] = groups[bucketOf(q)] || []).push(q);
+    const keys = shuffle(Object.keys(groups)), out = [];
+    for (const k of keys) groups[k] = shuffle(groups[k]);
+    for (let r = 0; out.length < n && keys.some((k) => groups[k].length); r = (r + 1) % keys.length) {
+      const g = groups[keys[r]];
+      if (g.length) out.push(g.pop());
+    }
+    return out;
+  }
+
   // reviewOnly：從錯題本按「開始複習」，只考到期的錯題
   function startRound(reviewOnly) {
     const due = state.user ? shuffle(dueList()) : [];
     const pick = reviewOnly ? due.slice(0, ROUND) : due.slice(0, 5);
     const boxed = new Set(active().map(([id]) => id));
-    const fresh = reviewOnly ? [] : shuffle(pool().filter((q) => !boxed.has(q.id)));
+    const fresh = reviewOnly ? [] : balanced(pool().filter((q) => !boxed.has(q.id)), ROUND);
     state.reviewIds = new Set(pick.map((q) => q.id));
     state.round = shuffle(pick.concat(fresh.slice(0, ROUND - pick.length)));
     if (!state.round.length) return;
@@ -262,7 +276,7 @@
   // ---------- 作答 ----------
   // 成語錯別字：每次隨機換一種樣子出題（句子、單一成語、四選一）
   const ALL_IDIOMS = [...new Set(window.QUESTIONS.filter((x) => x.type === "idiom")
-    .map((x) => x.idiom || (x.kind === "ctx" ? x.answer : "")).filter(Boolean))];
+    .map((x) => x.idiom || (x.kind === "ctx" ? x.answer : "")).filter((w) => w && [...w].length === 4))];
   function view(q) {
     if (!q.fromIdiom) return q;
     const mode = ["sentence", "idiom", "pick"][Math.floor(Math.random() * 3)];
@@ -285,7 +299,7 @@
         <span class="count">${state.i + 1} / ${state.round.length}</span>
       </div>
       <article class="card">
-        <span class="tag">${state.reviewIds.has(q.id) ? "複習・" : ""}${q.src ? `〈${esc(q.src)}〉` : q.type === "idiom" ? `成語・${KIND[q.kind]}` : q.fromIdiom ? "找出錯別字・成語" : `${TYPE_NAME[q.type]}・${q.level}`}</span>
+        <span class="tag">${state.reviewIds.has(q.id) ? "複習・" : ""}${q.set ? `${q.set}・${q.type === "read" ? "讀音" : KIND[q.kind]}` : q.src ? `〈${esc(q.src)}〉` : q.type === "idiom" ? `成語・${KIND[q.kind]}` : q.fromIdiom ? "找出錯別字・成語" : `${TYPE_NAME[q.type]}・${q.level}`}</span>
         <div id="qbody">${body(q)}</div>
       </article>
       <div id="fb"></div>`;
@@ -308,10 +322,14 @@
     }
     if (q.type === "idiom") {
       const opt = (cls) => state.order.map((o) => `<button class="opt ${cls}" data-v="${esc(o)}">${esc(o)}</button>`).join("");
+      // 選項裡有長成語（如「三折肱而成良醫」）時改成一欄
+      const idiomOpts = () => state.order.some((o) => [...o].length > 5) ? `<div class="opts wide">${opt("idiom4")}</div>` : `<div class="opts">${opt("idiom4")}</div>`;
       if (q.kind === "ctx") return `<p class="ask">空格裡最適合填入哪一個成語？</p>
-        <p class="stem">${esc(q.stem).replace("（　）", '<span class="gap">　　　　</span>')}</p><div class="opts">${opt("idiom4")}</div>`;
+        <p class="stem">${esc(q.stem).replace("（　）", '<span class="gap">　　　　</span>')}</p>${idiomOpts()}`;
+      if (q.kind === "rev") return `<p class="ask">哪一個成語的意思是：</p><p class="stem">「${esc(q.def)}」</p>${idiomOpts()}`;
       if (q.kind === "usage") return `<p class="ask">${esc(q.stem).replace(/「(正確|錯誤)」/, "<b class=\"key\">$1</b>")}</p><div class="opts wide">${opt("sent")}</div>`;
-      return `<p class="ask">「${esc(q.idiom)}」是什麼意思？</p>${cells(q.idiom)}<div class="opts wide">${opt("sent")}</div>`;
+      const show = [...q.idiom].length > 7 ? `<p class="stem"><b>${esc(q.idiom)}</b></p>` : cells(q.idiom);
+      return `<p class="ask">「${esc(q.idiom)}」是什麼意思？</p>${show}<div class="opts wide">${opt("sent")}</div>`;
     }
     if (q.type === "poly") {
       const mark = (s) => [...s].map((c) => (c === q.char ? `<em>${esc(c)}</em>` : esc(c))).join("");
@@ -387,6 +405,7 @@
     if (q.type === "form") return q.phrase.replace("（　）", q.answer);
     if (q.type === "poly") return q.answer;
     if (q.type === "pick") return `「${q.badIdiom}」應改為「${q.fromIdiom}」`;
+    if (q.type === "idiom" && q.kind === "rev") return `「${q.answer}」：${q.def}`;
     if (q.type === "idiom") return q.kind === "ctx" ? q.stem.replace("（　）", `「${q.answer}」`) : q.kind === "usage" ? q.answer : `「${q.idiom}」：${q.answer}`;
     return q.wrong < 0 ? "這句沒有錯字" : `「${[...q.sentence][q.wrong]}」應改為「${q.answer}」`;
   }
