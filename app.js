@@ -3,7 +3,8 @@
   "use strict";
 
   const ROUND = 10;
-  const TYPE_NAME = { read: "選出正確讀音", typo: "找出錯別字", form: "同音形近字", poly: "多音字判讀" };
+  const TYPE_NAME = { read: "選出正確讀音", typo: "找出錯別字", form: "同音形近字", poly: "多音字判讀", idiom: "成語應用" };
+  const KIND = { ctx: "情境選用", usage: "用法正誤", meaning: "成語釋義", trap: "望文生義" };
   const PUNCT = /[，。、；：？！「」『』（）《》—…\s]/;
   const app = document.getElementById("app");
 
@@ -19,7 +20,8 @@
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const shuffle = (arr) => { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
   const pool = () => window.QUESTIONS.filter((q) =>
-    (state.level === "全部" || q.level === state.level || (state.level === "古文十五篇" && q.classic)) &&
+    (state.level === "全部" || q.level === state.level || (state.level === "古文十五篇" && q.classic) ||
+      (q.level === "通用" && state.level !== "古文十五篇")) &&
     (state.type === "全部" || q.type === state.type));
   const chip = (group, value, label, current) =>
     `<button class="tab" data-group="${group}" data-value="${value}" aria-pressed="${value === current}">${label}</button>`;
@@ -271,7 +273,7 @@
         <span class="count">${state.i + 1} / ${state.round.length}</span>
       </div>
       <article class="card">
-        <span class="tag">${state.reviewIds.has(q.id) ? "複習・" : ""}${q.src ? `〈${esc(q.src)}〉` : `${TYPE_NAME[q.type]}・${q.level}`}</span>
+        <span class="tag">${state.reviewIds.has(q.id) ? "複習・" : ""}${q.src ? `〈${esc(q.src)}〉` : q.type === "idiom" ? `成語・${KIND[q.kind]}` : `${TYPE_NAME[q.type]}・${q.level}`}</span>
         <div id="qbody">${body(q)}</div>
       </article>
       <div id="fb"></div>`;
@@ -291,6 +293,13 @@
     if (q.type === "form") {
       return `<p class="ask">空格裡應該填哪個字？</p>${cells(q.phrase.replace("（　）", "＿"))}
         <div class="opts">${state.order.map((o) => `<button class="opt serif" data-v="${esc(o)}">${esc(o)}</button>`).join("")}</div>`;
+    }
+    if (q.type === "idiom") {
+      const opt = (cls) => state.order.map((o) => `<button class="opt ${cls}" data-v="${esc(o)}">${esc(o)}</button>`).join("");
+      if (q.kind === "ctx") return `<p class="ask">空格裡最適合填入哪一個成語？</p>
+        <p class="stem">${esc(q.stem).replace("（　）", '<span class="gap">　　　　</span>')}</p><div class="opts">${opt("idiom4")}</div>`;
+      if (q.kind === "usage") return `<p class="ask">${esc(q.stem).replace(/「(正確|錯誤)」/, "<b class=\"key\">$1</b>")}</p><div class="opts wide">${opt("sent")}</div>`;
+      return `<p class="ask">「${esc(q.idiom)}」是什麼意思？</p>${cells(q.idiom)}<div class="opts wide">${opt("sent")}</div>`;
     }
     if (q.type === "poly") {
       const mark = (s) => [...s].map((c) => (c === q.char ? `<em>${esc(c)}</em>` : esc(c))).join("");
@@ -361,6 +370,7 @@
     if (q.type === "read") return `「${q.word}」的「${q.target}」念 ${q.answer}`;
     if (q.type === "form") return q.phrase.replace("（　）", q.answer);
     if (q.type === "poly") return q.answer;
+    if (q.type === "idiom") return q.kind === "ctx" ? q.stem.replace("（　）", `「${q.answer}」`) : q.kind === "usage" ? q.answer : `「${q.idiom}」：${q.answer}`;
     return q.wrong < 0 ? "這句沒有錯字" : `「${[...q.sentence][q.wrong]}」應改為「${q.answer}」`;
   }
 

@@ -18,6 +18,7 @@
 | `firestore.rules` | Firestore 安全規則（貼到 Firebase 主控台） |
 | `questions.js` | 題庫第一批 100 題（已審核） |
 | `questions-classics.js` | 古文十五篇 63 題（已審核） |
+| `questions-idioms.js` | 成語應用 50 題，國高中通用（已審核） |
 | `firebase-config.js` | Firebase 設定 |
 | `docs/開發規格書.md` | 完整開發規格 |
 | `docs/討論與決策紀錄.md` | 每次討論決定的事項與進度 |

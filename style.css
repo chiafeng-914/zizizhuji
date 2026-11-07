@@ -154,3 +154,10 @@ button:focus-visible{outline:2px solid var(--ochre);outline-offset:3px}
 .book .due{font-size:14px;color:var(--vermilion);letter-spacing:.1em}
 .book .due b{font-size:22px;letter-spacing:0}
 .page-title{font-weight:900;font-size:34px;letter-spacing:.3em;margin:8px 0 0}
+
+/* ---------- 成語應用 ---------- */
+.stem{font-size:22px;line-height:2;text-align:center;margin:0 0 20px;letter-spacing:.06em}
+.stem .gap{display:inline-block;border-bottom:2px solid var(--vermilion);background:var(--vermilion-wash);margin:0 4px}
+.opt.idiom4{font-size:22px;font-weight:700;letter-spacing:.15em}
+.opt.sent{font-size:17px;text-align:left;line-height:1.7;padding:12px 16px;letter-spacing:.04em}
+.ask .key{color:var(--vermilion);border-bottom:2px solid var(--vermilion);padding:0 2px}
