@@ -161,3 +161,11 @@ button:focus-visible{outline:2px solid var(--ochre);outline-offset:3px}
 .opt.idiom4{font-size:22px;font-weight:700;letter-spacing:.15em}
 .opt.sent{font-size:17px;text-align:left;line-height:1.7;padding:12px 16px;letter-spacing:.04em}
 .ask .key{color:var(--vermilion);border-bottom:2px solid var(--vermilion);padding:0 2px}
+
+/* ---------- 登入插圖：珠串 ---------- */
+.beads-wrap{margin:6px 0 0;text-align:center}
+.beads{width:100%;max-width:420px;height:auto;display:block;margin:0 auto;overflow:visible}
+.beads text{font-family:var(--serif)}
+.beads .bead{animation:bob 2.6s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+.greet{font-size:15px;color:var(--ink-soft);letter-spacing:.3em;margin:2px 0 0}

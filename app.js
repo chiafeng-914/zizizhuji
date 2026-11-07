@@ -19,10 +19,9 @@
   // ---------- 小工具 ----------
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const shuffle = (arr) => { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  // 首頁只留「題型」選單；「古文十五篇」放在題型裡
   const pool = () => window.QUESTIONS.filter((q) =>
-    (state.level === "全部" || q.level === state.level || (state.level === "古文十五篇" && q.classic) ||
-      (q.level === "通用" && state.level !== "古文十五篇")) &&
-    (state.type === "全部" || q.type === state.type));
+    state.type === "全部" || (state.type === "classic" ? q.classic : q.type === state.type));
   const chip = (group, value, label, current) =>
     `<button class="tab" data-group="${group}" data-value="${value}" aria-pressed="${value === current}">${label}</button>`;
   const cells = (text, hl) => `<div class="grid-row" style="--n:${[...text].length}">${[...text].map((c) =>
@@ -84,7 +83,21 @@
   }
 
   // ---------- 登入 ----------
-  function hero() {
+  // 登入畫面插圖：一條絲線串起「一字一珠」的珠子，輕輕起伏
+  const BEADS = `<svg class="beads" viewBox="0 0 360 86" role="img" aria-label="一串寫著「一字一珠」的珠子">
+      <path d="M2 22 Q180 82 358 22" fill="none" stroke="var(--ink-faint)" stroke-width="1.2"/>
+      <path d="M2 22 l-2 -14 M358 22 l2 -14" stroke="var(--ink-faint)" stroke-width="1.2"/>
+      <g class="bead" style="animation-delay:0.00s"><circle cx="37.2" cy="33.7" r="6" fill="var(--sheet)" stroke="var(--ochre)" stroke-width="1.5"/><circle cx="35.2" cy="31.700000000000003" r="1.6" fill="var(--ochre)" opacity=".5"/></g>
+      <g class="bead" style="animation-delay:0.18s"><circle cx="78.0" cy="42.6" r="18" fill="var(--vermilion)"/><circle cx="87.0" cy="32.6" r="2.6" fill="#fff" opacity=".35"/><text x="78.0" y="49.6" text-anchor="middle" font-size="20" font-weight="900" fill="#fbf8f1">一</text></g>
+      <g class="bead" style="animation-delay:0.36s"><circle cx="118.8" cy="48.6" r="6" fill="var(--sheet)" stroke="var(--ochre)" stroke-width="1.5"/><circle cx="116.8" cy="46.6" r="1.6" fill="var(--ochre)" opacity=".5"/></g>
+      <g class="bead" style="animation-delay:0.54s"><circle cx="159.6" cy="51.6" r="18" fill="#2e2a26"/><circle cx="168.6" cy="41.6" r="2.6" fill="#fff" opacity=".35"/><text x="159.6" y="58.6" text-anchor="middle" font-size="20" font-weight="900" fill="#fbf8f1">字</text></g>
+      <g class="bead" style="animation-delay:0.72s"><circle cx="200.4" cy="51.6" r="18" fill="var(--ochre)"/><circle cx="209.4" cy="41.6" r="2.6" fill="#fff" opacity=".35"/><text x="200.4" y="58.6" text-anchor="middle" font-size="20" font-weight="900" fill="#fbf8f1">一</text></g>
+      <g class="bead" style="animation-delay:0.90s"><circle cx="241.2" cy="48.6" r="6" fill="var(--sheet)" stroke="var(--ochre)" stroke-width="1.5"/><circle cx="239.2" cy="46.6" r="1.6" fill="var(--ochre)" opacity=".5"/></g>
+      <g class="bead" style="animation-delay:1.08s"><circle cx="282.0" cy="42.6" r="18" fill="var(--moss)"/><circle cx="291.0" cy="32.6" r="2.6" fill="#fff" opacity=".35"/><text x="282.0" y="49.6" text-anchor="middle" font-size="20" font-weight="900" fill="#fbf8f1">珠</text></g>
+      <g class="bead" style="animation-delay:1.26s"><circle cx="322.8" cy="33.7" r="6" fill="var(--sheet)" stroke="var(--ochre)" stroke-width="1.5"/><circle cx="320.8" cy="31.700000000000003" r="1.6" fill="var(--ochre)" opacity=".5"/></g>
+    </svg>`;
+
+  function hero(login) {
     const d = new Date();
     const v = VERSES[(d.getFullYear() * 400 + d.getMonth() * 31 + d.getDate()) % VERSES.length];
     return `
@@ -97,14 +110,14 @@
           <span class="sub">一字一珠・日拾十顆</span>
           <div style="display:flex;flex-direction:column;align-items:center;gap:14px"><h1>字字珠璣</h1><span class="seal" aria-hidden="true">練字</span></div>
         </div>
-      </header>`;
+      </header>${login ? `<div class="beads-wrap">${BEADS}<p class="greet">今天也來拾幾顆珠子吧</p></div>` : ""}`;
   }
 
   function busy(form, text) { const b = form.querySelector("button[type=submit]"); b.disabled = true; b.lastChild.textContent = text; }
 
   function renderLogin(msg, code, seat) {
     state.screen = "login";
-    app.innerHTML = `${hero()}
+    app.innerHTML = `${hero(true)}
       <form class="section form" id="f">
         <h2>登入</h2>
         <label>班級代碼<input name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="6" required placeholder="老師給的六碼" value="${esc(code || "")}"></label>
@@ -143,7 +156,7 @@
 
   function renderPin(cls, seat, stu, msg) {
     state.screen = "login";
-    app.innerHTML = `${hero()}
+    app.innerHTML = `${hero(true)}
       <form class="section form" id="f">
         ${who(cls, seat)}<h2>${esc(stu.nickname)}，歡迎回來</h2>
         ${pinInput("pin", "請輸入你的 4 位數密碼")}
@@ -164,7 +177,7 @@
 
   function renderRegister(cls, seat, msg) {
     state.screen = "login";
-    app.innerHTML = `${hero()}
+    app.innerHTML = `${hero(true)}
       <form class="section form" id="f">
         ${who(cls, seat)}<h2>第一次登入</h2>
         <label>暱稱（老師看得到）<input name="nick" maxlength="12" required autocomplete="off"></label>
@@ -224,12 +237,8 @@
       ${u ? `<button class="book" id="book"><span><b>錯題本</b><small>${words ? `收著 ${words} 個字` : "目前沒有錯題"}</small></span>
         <span class="due">${due ? `今日待複習 <b>${due}</b> 題` : "今日已複習完"}</span></button>` : ""}
       <section class="section">
-        <h2>程度</h2>
-        <div class="tabs">${["全部", "國中", "高中", "古文十五篇"].map((x) => chip("level", x, x, state.level)).join("")}</div>
-      </section>
-      <section class="section">
         <h2>題型</h2>
-        <div class="tabs">${chip("type", "全部", "四種都練", state.type)}${Object.keys(TYPE_NAME).map((k) => chip("type", k, TYPE_NAME[k], state.type)).join("")}</div>
+        <div class="tabs">${chip("type", "全部", "全部都練", state.type)}${Object.keys(TYPE_NAME).map((k) => chip("type", k, TYPE_NAME[k], state.type)).join("")}${chip("type", "classic", "古文十五篇", state.type)}</div>
       </section>
       <button class="primary" id="start" ${n || due ? "" : "disabled"}><span class="dot"></span>開始練習</button>
       <p class="hint">${u ? `每回合 ${ROUND} 題，會先放入到期的錯題（最多 5 題）` : `共 ${n} 題・每回合隨機抽 ${Math.min(ROUND, n)} 題・訪客不保存紀錄`}</p>`;
