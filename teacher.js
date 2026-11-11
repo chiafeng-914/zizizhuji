@@ -70,6 +70,7 @@ async function renderMain(note) {
         <div class="code">${esc(c.code)}</div>
         <div class="meta">座號 ${c.seatMin}～${c.seatMax} 號・請把上面這組代碼給學生</div>
         <div class="row">
+          <button class="mini key" data-stat="${esc(c.code)}">學習統計</button>
           <button class="mini" data-stu="${esc(c.code)}">查看學生</button>
           <button class="mini" data-edit="${esc(c.code)}">修改</button>
           <button class="mini danger" data-del="${esc(c.code)}">刪除班級</button>
@@ -98,6 +99,7 @@ async function renderMain(note) {
   document.getElementById("out").addEventListener("click", async () => { await D.teacherSignOut(); renderSignIn(); });
   app.querySelectorAll("[data-stu]").forEach((b) => b.addEventListener("click", () => showStudents(b.dataset.stu)));
   const byCode = Object.fromEntries(classes.map((c) => [c.code, c]));
+  app.querySelectorAll("[data-stat]").forEach((b) => b.addEventListener("click", () => renderStats(byCode[b.dataset.stat])));
 
   // 修改班級名稱、座號範圍
   app.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => {
@@ -168,6 +170,106 @@ async function showStudents(code) {
       catch (e) { await say("刪除失敗", msgOf(e)); b.disabled = false; }
     }));
   } catch (e) { box.innerHTML = `<p class="err">${esc(msgOf(e))}</p>`; }
+}
+
+
+// ---------- 學習統計 ----------
+const Q = Object.fromEntries((window.QUESTIONS || []).map((q) => [q.id, q]));
+const CAT = ["讀音", "錯別字", "形近字", "多音字", "成語", "古文"];
+const catOf = (q) => q.classic ? "古文" : ({ read: "讀音", typo: "錯別字", form: "形近字", poly: "多音字", idiom: "成語" })[q.type] || "其他";
+function describe(q) {
+  if (q.type === "read") return { t: `「${q.word}」的「${q.target}」怎麼念`, a: q.answer };
+  if (q.type === "typo") return { t: "找錯字：" + q.sentence, a: q.wrong < 0 ? "全句正確" : `「${[...q.sentence][q.wrong]}」應改為「${q.answer}」` };
+  if (q.type === "form") return { t: q.phrase, a: q.phrase.replace("（　）", q.answer) };
+  if (q.type === "poly") return { t: `「${q.char}」讀音相同的一組`, a: q.answer };
+  if (q.kind === "ctx") return { t: q.stem, a: q.answer };
+  if (q.kind === "usage") return { t: `成語用法${q.stem.includes("錯誤") ? "（選錯誤）" : "（選正確）"}`, a: q.answer };
+  if (q.kind === "rev") return { t: `意思是「${q.def}」的成語`, a: q.answer };
+  return { t: `「${q.idiom}」的意思`, a: q.answer };
+}
+const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+const ymd = (d) => d ? `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}` : "";
+const bar = (label, right, n) => `<div class="brow"><span class="bl">${esc(label)}</span><span class="bt"><i style="width:${pct(right, n)}%"></i></span><span class="bv">${n ? pct(right, n) + "%" : "—"}<small>${n ? `（${n} 題）` : ""}</small></span></div>`;
+
+async function renderStats(c, days) {
+  days = days || 0;
+  app.innerHTML = `<div class="top"><button class="back" id="back">← 我的班級</button></div><p class="hint">統計中…</p>`;
+  document.getElementById("back").addEventListener("click", () => renderMain());
+  let answers, students;
+  try { [answers, students] = await Promise.all([D.classAnswers(c.code), D.listStudents(c.code)]); }
+  catch (e) { app.innerHTML += `<p class="err">${esc(msgOf(e))}</p>`; return; }
+  const since = days ? Date.now() - days * 864e5 : 0;
+  const A = answers.filter((x) => Q[x.qid] && (!since || (x.at && x.at.getTime() >= since)));
+  const boxes = await Promise.all(students.map((s) => D.progressOf(s.sid).catch(() => ({}))));
+
+  // 各題型答對率
+  const byCat = {}; CAT.forEach((k) => (byCat[k] = { n: 0, r: 0 }));
+  // 每一題
+  const byQ = {};
+  // 每位學生
+  const byS = {}; students.forEach((s, i) => (byS[s.sid] = { s, n: 0, r: 0, last: null, cat: {}, book: Object.values(boxes[i]).filter((b) => b.box < 5).length }));
+  for (const x of A) {
+    const q = Q[x.qid], k = catOf(q);
+    if (byCat[k]) { byCat[k].n++; if (x.ok) byCat[k].r++; }
+    const t = byQ[x.qid] = byQ[x.qid] || { n: 0, w: 0, given: {} };
+    t.n++; if (!x.ok) { t.w++; if (x.given) t.given[x.given] = (t.given[x.given] || 0) + 1; }
+    const st = byS[x.sid]; if (!st) continue;
+    st.n++; if (x.ok) st.r++;
+    st.cat[k] = st.cat[k] || { n: 0, r: 0 }; st.cat[k].n++; if (x.ok) st.cat[k].r++;
+    if (x.at && (!st.last || x.at > st.last)) st.last = x.at;
+  }
+  const total = A.length, right = A.filter((x) => x.ok).length, active = Object.values(byS).filter((x) => x.n).length;
+  const top = Object.entries(byQ).filter(([, t]) => t.w).sort((a, b) => b[1].w - a[1].w || b[1].w / b[1].n - a[1].w / a[1].n).slice(0, 10);
+  const rows = Object.values(byS).sort((a, b) => a.s.seat - b.s.seat);
+
+  app.innerHTML = `
+    <div class="top"><button class="back" id="back">← 我的班級</button></div>
+    <h1 class="page-title">${esc(c.name)}</h1>
+    <p class="msg" style="text-align:left;margin-top:0">學習統計</p>
+    <div class="tabs" id="range">${[[0, "全部"], [7, "最近 7 天"], [30, "最近 30 天"]].map(([d, l]) => `<button class="tab" data-d="${d}" aria-pressed="${d === days}">${l}</button>`).join("")}</div>
+    <div class="kpi">
+      <div><b>${total}</b><span>作答題數</span></div>
+      <div><b>${pct(right, total)}%</b><span>全班答對率</span></div>
+      <div><b>${active}<small> / ${students.length}</small></b><span>有練習的學生</span></div>
+    </div>
+    ${total ? "" : `<p class="msg">這段期間還沒有作答紀錄。</p>`}
+
+    <section class="section"><h2>各題型答對率</h2>${CAT.map((k) => bar(k, byCat[k].r, byCat[k].n)).join("")}</section>
+
+    <section class="section"><h2>全班易錯排行</h2>
+      ${top.length ? `<ol class="rank">${top.map(([id, t]) => {
+        const q = Q[id], d = describe(q), g = Object.entries(t.given).sort((a, b) => b[1] - a[1]).slice(0, 3);
+        return `<li><details><summary><span class="rt">${esc(d.t)}</span><span class="rw">錯 ${t.w} 次・錯誤率 ${pct(t.w, t.n)}%</span></summary>
+          <p><b>正解：</b>${esc(d.a)}</p>
+          ${g.length ? `<p><b>學生最常選的錯誤答案：</b>${g.map(([v, n]) => `${esc(v)}（${n} 次）`).join("、")}</p>` : ""}
+          <p class="nt">${esc(q.note || "")}</p></details></li>`;
+      }).join("")}</ol>` : `<p class="hint">還沒有答錯的紀錄。</p>`}
+    </section>
+
+    <section class="section"><h2>個別學生進度</h2>
+      ${rows.length ? `<div class="tw"><table class="st"><tr><th>座號</th><th>暱稱</th><th>題數</th><th>答對率</th><th>錯題本</th><th>最後練習</th></tr>
+      ${rows.map((x) => `<tr class="${x.n && pct(x.r, x.n) < 60 ? "low" : ""}"><td>${x.s.seat}</td><td>${esc(x.s.nickname)}</td><td>${x.n}</td><td>${x.n ? pct(x.r, x.n) + "%" : "—"}</td><td>${x.book} 字</td><td>${x.last ? `${x.last.getMonth() + 1}/${x.last.getDate()}` : "未練習"}</td></tr>`).join("")}
+      </table></div><p class="hint">答對率低於 60% 的學生以紅字標示；錯題本是還沒畢業的字數</p>` : `<p class="hint">還沒有學生登入過。</p>`}
+    </section>
+
+    <button class="primary" id="csv"><span class="dot"></span>匯出成績（Excel）</button>`;
+
+  document.getElementById("back").addEventListener("click", () => renderMain());
+  app.querySelectorAll("#range .tab").forEach((b) => b.addEventListener("click", () => renderStats(c, Number(b.dataset.d))));
+  document.getElementById("csv").addEventListener("click", () => {
+    const head = ["座號", "暱稱", "練習題數", "答對題數", "答對率(%)", "錯題本字數", "最後練習日期"].concat(CAT.map((k) => `${k}答對率(%)`));
+    const body = rows.map((x) => [x.s.seat, x.s.nickname, x.n, x.r, x.n ? pct(x.r, x.n) : "", x.book, x.last ? ymd(x.last) : ""]
+      .concat(CAT.map((k) => (x.cat[k] && x.cat[k].n ? pct(x.cat[k].r, x.cat[k].n) : ""))));
+    const cell = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const csv = "﻿" + [head].concat(body).map((r) => r.map(cell).join(",")).join("\r\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    // 檔名用英數字，各種瀏覽器都能正確存成 .csv（班級代碼可對應班級）
+    a.download = `grades_${c.code}_${days ? days + "days" : "all"}_${ymd(new Date()).replace(/\//g, "-")}.csv`;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  });
+  window.scrollTo({ top: 0 });
 }
 
 (async () => {

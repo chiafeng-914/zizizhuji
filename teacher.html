@@ -30,10 +30,38 @@
   .dlg-box p{margin:0 0 12px;color:var(--ink-soft);line-height:1.8}
   .dlg-in{display:block;width:100%;font:inherit;font-size:20px;padding:8px 4px;border:0;border-bottom:1.5px solid var(--ink-soft);background:var(--paper);color:var(--ink);margin-bottom:14px}
   .dlg .row{justify-content:flex-end}
+  .mini.key{background:var(--ink);color:var(--sheet);border-color:var(--ink)}
+  .top{display:flex;align-items:center;margin-bottom:8px}
+  .top .back{border:0;background:none;color:var(--ink-soft);padding:8px 2px;min-height:44px;font-size:15px}
+  .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:16px}
+  .kpi div{background:var(--sheet);border:1px solid var(--rule);padding:12px 8px;text-align:center}
+  .kpi b{display:block;font-size:26px;font-weight:900;color:var(--vermilion);line-height:1.2}
+  .kpi b small{font-size:14px;color:var(--ink-faint)}
+  .kpi span{font-size:13px;color:var(--ink-soft)}
+  .brow{display:grid;grid-template-columns:4.2em 1fr 6.5em;align-items:center;gap:8px;margin:6px 0;font-size:15px}
+  .bt{height:10px;background:var(--rule);border-radius:5px;overflow:hidden}
+  .bt i{display:block;height:100%;background:var(--moss)}
+  .bv{text-align:right;font-weight:700}.bv small{font-weight:400;color:var(--ink-faint);font-size:12px}
+  .rank{padding-left:1.4em;margin:0}
+  .rank li{padding:8px 0;border-top:1px dashed var(--rule)}
+  .rank summary{cursor:pointer;list-style:none;display:flex;flex-direction:column;min-height:40px}
+  .rank summary::-webkit-details-marker{display:none}
+  .rank .rt{font-size:17px;font-weight:700}
+  .rank .rw{font-size:13px;color:var(--vermilion)}
+  .rank details p{margin:6px 0 0;font-size:15px}
+  .rank .nt{color:var(--ink-soft)}
+  .tw{overflow-x:auto}
+  table.st{font-size:15px;min-width:420px}
+  table.st tr.low td{color:var(--vermilion)}
 </style>
 </head>
 <body>
 <main id="app"><p class="hint">載入中…</p></main>
+<script src="questions.js"></script>
+<script src="questions-classics.js"></script>
+<script src="questions-idioms.js"></script>
+<script src="questions-idiom-list.js"></script>
+<script src="questions-idiom-typos.js"></script>
 <script type="module" src="teacher.js"></script>
 </body>
 </html>

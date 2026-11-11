@@ -71,9 +71,10 @@ service cloud.firestore {
     // 每一次作答紀錄（給老師統計）
     match /answers/{id} {
       allow create: if isMember(request.resource.data.sid)
-        && request.resource.data.keys().hasOnly(['code', 'sid', 'qid', 'ok', 'uid', 'at'])
+        && request.resource.data.keys().hasOnly(['code', 'sid', 'qid', 'ok', 'given', 'uid', 'at'])
         && request.resource.data.uid == request.auth.uid
-        && request.resource.data.ok is bool;
+        && request.resource.data.ok is bool
+        && (!('given' in request.resource.data) || (request.resource.data.given is string && request.resource.data.given.size() <= 80));
       allow read, delete: if isTeacher();
     }
   }

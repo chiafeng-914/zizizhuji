@@ -64,7 +64,7 @@
     } catch (e) { /* 離線時先用手機裡的紀錄 */ }
   }
 
-  function record(q, ok) {
+  function record(q, ok, given) {
     if (!state.user) return "";
     const b = state.boxes[q.id];
     let status = "";
@@ -77,7 +77,7 @@
     const u = state.user;
     db().then((m) => {
       if (status) m.saveProgress(u.sid, state.boxes).catch(() => {});
-      m.logAnswer({ code: u.code, sid: u.sid, qid: q.id, ok }).catch(() => {});
+      m.logAnswer({ code: u.code, sid: u.sid, qid: q.id, ok, given: String(given || "").slice(0, 80) }).catch(() => {});
     }).catch(() => {});
     return status;
   }
@@ -428,7 +428,9 @@
     state.answered = true;
     const al = document.getElementById("allright"); if (al) al.disabled = true;
     app.querySelectorAll(".ch[data-i]").forEach((b) => (b.disabled = true));
-    state.results.push({ q, ok, given, status: record(q, ok) });
+    // 記錄學生選了什麼（給老師看「最常選的錯誤答案」）
+    const said = q.type !== "typo" ? given : given === "這句沒有錯字" ? given : foundPosition ? `改成「${given}」` : `點了「${given}」`;
+    state.results.push({ q, ok, given, status: record(q, ok, said) });
     const half = !ok && foundPosition;
     const title = ok ? "答對了" : half ? "找到錯字了，但改法不對" : "再想想";
     const last = state.i === state.round.length - 1;

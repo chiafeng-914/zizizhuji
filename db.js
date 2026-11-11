@@ -81,9 +81,9 @@ export async function saveProgress(sid, boxes) {
   return F.setDoc(ref(F, db, "progress", sid), { boxes, updatedAt: F.serverTimestamp() });
 }
 
-export async function logAnswer({ code, sid, qid, ok }) {
+export async function logAnswer({ code, sid, qid, ok, given }) {
   const u = await anyUser(); const { db, F } = fb;
-  return F.addDoc(F.collection(db, "answers"), { code, sid, qid, ok, uid: u.uid, at: F.serverTimestamp() });
+  return F.addDoc(F.collection(db, "answers"), { code, sid, qid, ok, given: given || "", uid: u.uid, at: F.serverTimestamp() });
 }
 
 // ---------- 老師 ----------
@@ -169,4 +169,21 @@ export async function deleteClass(code) {
   refs = ans.docs.map((d) => d.ref).concat(refs);
   refs.push(ref(F, db, "classes", code));
   await deleteRefs(refs);
+}
+
+// ---------- 老師：學習統計 ----------
+// 一個班的所有作答紀錄
+export async function classAnswers(code) {
+  const { db, F } = await load();
+  const s = await F.getDocs(F.query(F.collection(db, "answers"), F.where("code", "==", code)));
+  return s.docs.map((d) => {
+    const x = d.data(), at = x.at && typeof x.at.toDate === "function" ? x.at.toDate() : x.at ? new Date(x.at) : null;
+    return Object.assign({}, x, { at });
+  });
+}
+// 每位學生的錯題本（還在盒子裡、尚未畢業的字數）
+export async function progressOf(sid) {
+  const { db, F } = await load();
+  const s = await F.getDoc(ref(F, db, "progress", sid));
+  return s.exists() ? (s.data().boxes || {}) : {};
 }
