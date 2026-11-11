@@ -11,6 +11,27 @@ const ERR = {
   "auth/weak-password": "密碼至少要 6 個字元。",
   "auth/too-many-requests": "嘗試太多次，請稍後再試。"
 };
+// 頁面內的對話框：取代瀏覽器的 prompt／confirm／alert（有些瀏覽器會擋掉這些彈出視窗）
+function ask({ title, text = "", input = null, ok = "確定", cancel = "取消", danger = false }) {
+  return new Promise((resolve) => {
+    const wrap = document.createElement("div");
+    wrap.className = "dlg";
+    wrap.innerHTML = `<div class="dlg-box" role="dialog" aria-modal="true">
+      <h3>${esc(title)}</h3>${text ? `<p>${esc(text).replace(/\n/g, "<br>")}</p>` : ""}
+      ${input ? `<input class="dlg-in" ${input.type ? `type="${input.type}"` : ""} ${input.inputmode ? `inputmode="${input.inputmode}"` : ""} maxlength="${input.max || 40}" placeholder="${esc(input.placeholder || "")}" autocomplete="off">` : ""}
+      <div class="row">${cancel ? `<button class="mini" data-x>${esc(cancel)}</button>` : ""}<button class="mini ${danger ? "danger" : ""}" data-ok>${esc(ok)}</button></div>
+    </div>`;
+    document.body.appendChild(wrap);
+    const inp = wrap.querySelector(".dlg-in");
+    const done = (v) => { wrap.remove(); resolve(v); };
+    wrap.querySelector("[data-ok]").addEventListener("click", () => done(input ? inp.value : true));
+    const x = wrap.querySelector("[data-x]"); if (x) x.addEventListener("click", () => done(input ? null : false));
+    if (inp) { inp.focus(); inp.addEventListener("keydown", (e) => { if (e.key === "Enter") done(inp.value); }); }
+    else wrap.querySelector("[data-ok]").focus();
+  });
+}
+const say = (title, text) => ask({ title, text, ok: "知道了", cancel: "" });
+
 const msgOf = (e) => ERR[e && e.code] || `發生錯誤：${(e && (e.code || e.message)) || e}`;
 
 function renderSignIn(msg) {
@@ -92,7 +113,7 @@ async function renderMain(note) {
       if (a > b) { err.textContent = "座號範圍不對。"; return; }
       try {
         const out = (await D.listStudents(code)).filter((s) => s.seat < a || s.seat > b);
-        if (out.length && !window.confirm(`有 ${out.length} 位學生（${out.map((s) => s.seat + " 號").join("、")}）不在新的座號範圍內。\n他們的紀錄會保留，但之後無法再登入。確定要儲存嗎？`)) return;
+        if (out.length && !(await ask({ title: "有學生不在新的座號範圍內", text: `${out.map((s) => s.seat + " 號").join("、")}不在 ${a}～${b} 號之間。\n他們的紀錄會保留，但之後無法再登入。`, ok: "仍要儲存" }))) return;
         await D.updateClass(code, { name, seatMin: a, seatMax: b });
         renderMain(`已更新「${name}」：座號 ${a}～${b} 號`);
       } catch (x) { err.textContent = msgOf(x); }
@@ -102,13 +123,19 @@ async function renderMain(note) {
   // 刪除整個班級：要輸入班級名稱確認，避免按錯
   app.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", async () => {
     const c = byCode[b.dataset.del];
+    b.disabled = true; b.textContent = "讀取中…";
     let n = 0; try { n = (await D.listStudents(c.code)).length; } catch (x) {}
-    const typed = window.prompt(`確定要刪除「${c.name}」嗎？\n班上 ${n} 位學生的帳號、錯題本與作答紀錄都會一起刪除，無法復原。\n\n請輸入班級名稱「${c.name}」確認：`, "");
+    b.disabled = false; b.textContent = "刪除班級";
+    const typed = await ask({
+      title: `刪除「${c.name}」？`,
+      text: `班上 ${n} 位學生的帳號、錯題本與作答紀錄都會一起刪除，無法復原。\n請輸入班級名稱「${c.name}」確認：`,
+      input: { placeholder: String(c.name) }, ok: "確定刪除", danger: true
+    });
     if (typed === null) return;
-    if (typed.trim() !== String(c.name)) { window.alert("名稱不符，沒有刪除。"); return; }
+    if (typed.trim() !== String(c.name)) { await say("沒有刪除", "輸入的名稱和班級名稱不同。"); return; }
     b.disabled = true; b.textContent = "刪除中…";
     try { await D.deleteClass(c.code); renderMain(`已刪除「${c.name}」`); }
-    catch (x) { window.alert(msgOf(x)); b.disabled = false; b.textContent = "刪除班級"; }
+    catch (x) { await say("刪除失敗", msgOf(x)); b.disabled = false; b.textContent = "刪除班級"; }
   }));
   document.getElementById("nc").addEventListener("submit", async (e) => {
     e.preventDefault(); const f = e.target, a = Number(f.a.value), b = Number(f.b.value);
@@ -127,18 +154,18 @@ async function showStudents(code) {
       `<tr><td>${s.seat}</td><td>${esc(s.nickname)}</td><td style="text-align:right;white-space:nowrap"><button class="mini" data-reset="${esc(s.sid)}" data-name="${esc(s.seat)} 號 ${esc(s.nickname)}">重設密碼</button> <button class="mini danger" data-rm="${esc(s.sid)}" data-name="${esc(s.seat)} 號 ${esc(s.nickname)}">刪除</button></td></tr>`).join("")}</table>`
       : `<p class="hint">還沒有學生登入過。</p>`;
     box.querySelectorAll("[data-reset]").forEach((b) => b.addEventListener("click", async () => {
-      const pin = window.prompt(`幫 ${b.dataset.name} 設定新的 4 位數密碼：`, "");
+      const pin = await ask({ title: `重設 ${b.dataset.name} 的密碼`, text: "請輸入新的 4 位數密碼：", input: { inputmode: "numeric", max: 4 } });
       if (pin === null) return;
-      if (!/^\d{4}$/.test(pin)) { window.alert("密碼要是 4 個數字。"); return; }
-      try { await D.resetPin(b.dataset.reset, pin); window.alert("已重設，請告訴學生新密碼。"); }
-      catch (e) { window.alert(msgOf(e)); }
+      if (!/^\d{4}$/.test(pin)) { await say("沒有重設", "密碼要是 4 個數字。"); return; }
+      try { await D.resetPin(b.dataset.reset, pin); await say("已重設", `請告訴學生新密碼：${pin}`); }
+      catch (e) { await say("重設失敗", msgOf(e)); }
     }));
     // 刪除單一學生：座號可以重新註冊
     box.querySelectorAll("[data-rm]").forEach((b) => b.addEventListener("click", async () => {
-      if (!window.confirm(`確定要刪除 ${b.dataset.name} 嗎？\n這位學生的帳號、錯題本與作答紀錄都會刪除，這個座號可以重新註冊。`)) return;
+      if (!(await ask({ title: `刪除 ${b.dataset.name}？`, text: "這位學生的帳號、錯題本與作答紀錄都會刪除，這個座號可以重新註冊。", ok: "確定刪除", danger: true }))) return;
       b.disabled = true;
       try { await D.deleteStudent(b.dataset.rm); showStudents(code); }
-      catch (e) { window.alert(msgOf(e)); b.disabled = false; }
+      catch (e) { await say("刪除失敗", msgOf(e)); b.disabled = false; }
     }));
   } catch (e) { box.innerHTML = `<p class="err">${esc(msgOf(e))}</p>`; }
 }
