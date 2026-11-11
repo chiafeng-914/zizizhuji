@@ -126,3 +126,47 @@ export async function resetPin(sid, pin) {
   const { db, F } = await load();
   await F.setDoc(ref(F, db, "secrets", sid), { pin: await hashPin(sid, pin) });
 }
+
+// ---------- 老師：修改與刪除 ----------
+export async function updateClass(code, { name, seatMin, seatMax }) {
+  const { db, F } = await load();
+  await F.updateDoc(ref(F, db, "classes", code), { name, seatMin: Number(seatMin), seatMax: Number(seatMax) });
+}
+
+// 分批刪除（Firestore 一次最多 500 筆）
+async function deleteRefs(refs) {
+  const { db, F } = await load();
+  for (let i = 0; i < refs.length; i += 400) {
+    const b = F.writeBatch(db);
+    refs.slice(i, i + 400).forEach((r) => b.delete(r));
+    await b.commit();
+  }
+}
+
+// 刪除一位學生：基本資料、密碼、登入過的裝置、錯題本、作答紀錄，讓這個座號可以重新註冊
+async function studentRefs(sid, withAnswers) {
+  const { db, F } = await load();
+  const devs = await F.getDocs(F.collection(db, "students", sid, "devices"));
+  const refs = devs.docs.map((d) => d.ref);
+  refs.push(ref(F, db, "progress", sid), ref(F, db, "secrets", sid), ref(F, db, "students", sid));
+  if (withAnswers) {
+    const ans = await F.getDocs(F.query(F.collection(db, "answers"), F.where("sid", "==", sid)));
+    ans.docs.forEach((d) => refs.unshift(d.ref));
+  }
+  return refs;
+}
+export async function deleteStudent(sid) {
+  await deleteRefs(await studentRefs(sid, true));
+}
+
+// 刪除整個班級：班上所有學生的資料、作答紀錄，最後刪班級本身
+export async function deleteClass(code) {
+  const { db, F } = await load();
+  const students = await listStudents(code);
+  let refs = [];
+  for (const s of students) refs = refs.concat(await studentRefs(s.sid, false));
+  const ans = await F.getDocs(F.query(F.collection(db, "answers"), F.where("code", "==", code)));
+  refs = ans.docs.map((d) => d.ref).concat(refs);
+  refs.push(ref(F, db, "classes", code));
+  await deleteRefs(refs);
+}

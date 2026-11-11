@@ -63,8 +63,9 @@ service cloud.firestore {
     // 錯題本與複習進度
     match /progress/{sid} {
       allow read: if isMember(sid) || isTeacher();
-      allow write: if isMember(sid)
+      allow create, update: if isMember(sid)
         && request.resource.data.keys().hasOnly(['boxes', 'updatedAt']);
+      allow delete: if isTeacher();   // 老師刪除學生或班級時一併清掉
     }
 
     // 每一次作答紀錄（給老師統計）
@@ -73,7 +74,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['code', 'sid', 'qid', 'ok', 'uid', 'at'])
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.ok is bool;
-      allow read: if isTeacher();
+      allow read, delete: if isTeacher();
     }
   }
 }

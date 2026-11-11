@@ -14,7 +14,7 @@
 | `style.css` | 介面樣式（紙感書房風格） |
 | `app.js` | 練習程式（登入、錯題本、五盒複習、訪客模式） |
 | `db.js` | Firebase 連線 |
-| `teacher.html`、`teacher.js` | 老師專用頁：建立班級、查看學生、重設密碼 |
+| `teacher.html`、`teacher.js` | 老師專用頁：建立、修改、刪除班級，查看、刪除學生，重設密碼 |
 | `firestore.rules` | Firestore 安全規則（貼到 Firebase 主控台） |
 | `questions.js` | 題庫第一批 100 題（已審核） |
 | `questions-classics.js` | 古文十五篇 63 題（已審核） |
